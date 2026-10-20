@@ -19,6 +19,16 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem("expenseflow_user")); } catch { return null; }
   });
   const [authMode, setAuthMode] = useState("login");
+  const [authView, setAuthView] = useState(
+  new URLSearchParams(window.location.search).has("token")
+    ? "reset"
+    : "auth"
+);
+const [resetEmail, setResetEmail] = useState("");
+const [resetPassword, setResetPassword] = useState("");
+const [resetMessage, setResetMessage] = useState("");
+const [resetError, setResetError] = useState("");
+const [resetLoading, setResetLoading] = useState(false);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [transactions, setTransactions] = useState([]);
   const [summary, setSummary] = useState({ income: 0, expenses: 0, balance: 0, transactionCount: 0, byCategory: [] });
@@ -55,17 +65,50 @@ export default function App() {
     setToken(null); setUser(null); setTransactions([]);
   }
 
+ 
   async function submitAuth(event) {
-    event.preventDefault(); setError("");
+    event.preventDefault();
+    setError("");
+
     try {
-      const data = await api(`/auth/${authMode === "register" ? "register" : "login"}`, {
-        method: "POST", body: JSON.stringify(authForm)
-      });
+      const data = await api(
+        `/auth/${authMode === "register" ? "register" : "login"}`,
+        {
+          method: "POST",
+          body: JSON.stringify(authForm)
+        }
+      );
+
       localStorage.setItem("expenseflow_token", data.token);
       localStorage.setItem("expenseflow_user", JSON.stringify(data.user));
-      setToken(data.token); setUser(data.user); setNotice("Welcome to ExpenseFlow.");
-    } catch (err) { setError(err.message); }
+      setToken(data.token);
+      setUser(data.user);
+      setNotice("Welcome to ExpenseFlow.");
+    } catch (err) {
+      setError(err.message);
+    }
   }
+
+  async function submitForgotPassword(event) {
+    event.preventDefault();
+    setResetError("");
+    setResetMessage("");
+    setResetLoading(true);
+
+    try {
+      const data = await api("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: resetEmail })
+      });
+
+      setResetMessage(data.message);
+    } catch (err) {
+      setResetError(err.message);
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
 
   function openCreate() {
     setEditing(null);
@@ -117,8 +160,27 @@ export default function App() {
   }, [transactions]);
 
   if (!token) {
-    return <AuthScreen mode={authMode} setMode={setAuthMode} form={authForm} setForm={setAuthForm} onSubmit={submitAuth} error={error} />;
+   
+return (
+  <AuthScreen
+    mode={authMode}
+    setMode={setAuthMode}
+    form={authForm}
+    setForm={setAuthForm}
+    onSubmit={submitAuth}
+    error={error}
+    authView={authView}
+    setAuthView={setAuthView}
+    resetEmail={resetEmail}
+    setResetEmail={setResetEmail}
+    submitForgotPassword={submitForgotPassword}
+    resetMessage={resetMessage}
+    resetError={resetError}
+    resetLoading={resetLoading}
+  />
+);
   }
+
 
   return (
     <div className="app-shell">
@@ -203,6 +265,253 @@ function StatCard({ label, value, icon, tone, foot }) {
 function EmptyChart({ onAdd }) {
   return <div className="empty-chart"><div className="empty-chart-art"><span/><span/><span/><span/><span/><span/><span/></div><strong>Your cash flow starts here</strong><p>Add income or expenses to build your chart.</p><button className="text-button" onClick={onAdd}>Add your first transaction ↗</button></div>;
 }
-function AuthScreen({ mode, setMode, form, setForm, onSubmit, error }) {
-  return <div className="auth-page"><div className="auth-visual"><div className="brand auth-brand"><span className="brand-mark"><Wallet size={20}/></span><span>expense<span className="brand-light">flow</span></span></div><div className="auth-message"><span className="eyebrow"><Sparkles size={14}/> FINANCIAL CLARITY, SIMPLIFIED</span><h1>A little more clarity.<br/><em>A lot more control.</em></h1><p>A calmer way to understand your spending, celebrate progress, and make room for what matters.</p><div className="auth-preview"><div className="preview-top"><span>MONTHLY OVERVIEW</span><span className="preview-live">● LIVE VIEW</span></div><strong>₹42,850.00</strong><small>Illustrative balance preview</small><div className="preview-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></div><div className="preview-bottom"><span>↑ Income</span><span>↗ Expenses</span></div></div></div><div className="auth-caption">Small steps today. Stronger habits tomorrow.</div></div><div className="auth-form-side"><div className="auth-form-wrap"><div className="auth-mobile-brand brand"><span className="brand-mark"><Wallet size={20}/></span><span>expense<span className="brand-light">flow</span></span></div><span className="form-overline">{mode === "register" ? "YOUR NEXT CHAPTER" : "WELCOME BACK"}</span><h2>{mode === "register" ? "Create your account" : "Good to see you again"}</h2><p className="auth-subtitle">{mode === "register" ? "Start building a clearer picture of your money." : "Sign in to pick up where you left off."}</p>{error && <div className="alert error-alert">{error}</div>}<form onSubmit={onSubmit} className="auth-form">{mode === "register" && <label>Full name<input required minLength="2" maxLength="60" autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Your name"/></label>}<label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com"/></label><label>Password<input required type="password" minLength={mode === "register" ? 8 : 1} maxLength="72" autoComplete={mode === "register" ? "new-password" : "current-password"} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder={mode === "register" ? "At least 8 characters" : "Your password"}/></label><button className="primary-button auth-submit" type="submit">{mode === "register" ? "Create account" : "Sign in"} <span>↗</span></button></form><div className="auth-toggle">{mode === "register" ? "Already have an account?" : "New to ExpenseFlow?"} <button onClick={() => setMode(mode === "register" ? "login" : "register")}>{mode === "register" ? "Sign in" : "Create an account"}</button></div><div className="auth-privacy">Your financial data is scoped to your account.</div></div></div></div>;
+
+function AuthScreen({
+  mode,
+  setMode,
+  form,
+  setForm,
+  onSubmit,
+  error,
+  authView,
+  setAuthView,
+  resetEmail,
+  setResetEmail,
+  submitForgotPassword,
+  resetMessage,
+  resetError,
+  resetLoading
+}) {
+  const isForgot = authView === "forgot";
+
+  return (
+    <div className="auth-page">
+      <div className="auth-visual">
+        <div className="brand auth-brand">
+          <span className="brand-mark"><Wallet size={20}/></span>
+          <span>expense<span className="brand-light">flow</span></span>
+        </div>
+
+        <div className="auth-message">
+          <span className="eyebrow">
+            <Sparkles size={14}/> FINANCIAL CLARITY, SIMPLIFIED
+          </span>
+          <h1>A little more clarity.<br/><em>A lot more control.</em></h1>
+          <p>
+            A calmer way to understand your spending, celebrate progress,
+            and make room for what matters.
+          </p>
+
+          <div className="auth-preview">
+            <div className="preview-top">
+              <span>MONTHLY OVERVIEW</span>
+              <span className="preview-live">● LIVE VIEW</span>
+            </div>
+            <strong>₹42,850.00</strong>
+            <small>Illustrative balance preview</small>
+            <div className="preview-bars">
+              <i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/>
+            </div>
+            <div className="preview-bottom">
+              <span>↑ Income</span>
+              <span>↗ Expenses</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="auth-caption">
+          Small steps today. Stronger habits tomorrow.
+        </div>
+      </div>
+
+      <div className="auth-form-side">
+        <div className="auth-form-wrap">
+          <div className="auth-mobile-brand brand">
+            <span className="brand-mark"><Wallet size={20}/></span>
+            <span>expense<span className="brand-light">flow</span></span>
+          </div>
+
+          {isForgot ? (
+            <>
+              <span className="form-overline">ACCOUNT RECOVERY</span>
+              <h2>Forgot your password?</h2>
+              <p className="auth-subtitle">
+                Enter your email and we'll help you reset your password.
+              </p>
+
+              {resetMessage && (
+                <div className="alert">{resetMessage}</div>
+              )}
+              {resetError && (
+                <div className="alert error-alert">{resetError}</div>
+              )}
+
+              <form
+                onSubmit={submitForgotPassword}
+                className="auth-form"
+              >
+                <label>
+                  Email address
+                  <input
+                    required
+                    type="email"
+                    autoComplete="email"
+                    value={resetEmail}
+                    onChange={e => setResetEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </label>
+
+                <button
+                  className="primary-button auth-submit"
+                  type="submit"
+                  disabled={resetLoading}
+                >
+                  {resetLoading ? "Requesting..." : "Send reset link"}
+                  <span>↗</span>
+                </button>
+              </form>
+
+              <div className="auth-toggle">
+                Remember your password?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthView("auth");
+                    setResetMessage("");
+                    setResetError("");
+                  }}
+                >
+                  Sign in
+                </button>
+              </div>
+
+              {resetMessage && (
+                <p className="auth-subtitle">
+                  For local testing, check the backend terminal for the reset link.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="form-overline">
+                {mode === "register" ? "YOUR NEXT CHAPTER" : "WELCOME BACK"}
+              </span>
+
+              <h2>
+                {mode === "register"
+                  ? "Create your account"
+                  : "Good to see you again"}
+              </h2>
+
+              <p className="auth-subtitle">
+                {mode === "register"
+                  ? "Start building a clearer picture of your money."
+                  : "Sign in to pick up where you left off."}
+              </p>
+
+              {error && <div className="alert error-alert">{error}</div>}
+
+              <form onSubmit={onSubmit} className="auth-form">
+                {mode === "register" && (
+                  <label>
+                    Full name
+                    <input
+                      required
+                      minLength="2"
+                      maxLength="60"
+                      autoComplete="name"
+                      value={form.name}
+                      onChange={e =>
+                        setForm({ ...form, name: e.target.value })
+                      }
+                      placeholder="Your name"
+                    />
+                  </label>
+                )}
+
+                <label>
+                  Email address
+                  <input
+                    required
+                    type="email"
+                    autoComplete="email"
+                    value={form.email}
+                    onChange={e =>
+                      setForm({ ...form, email: e.target.value })
+                    }
+                    placeholder="you@example.com"
+                  />
+                </label>
+
+                <label>
+                  Password
+                  <input
+                    required
+                    type="password"
+                    minLength={mode === "register" ? 8 : 1}
+                    maxLength="72"
+                    autoComplete={
+                      mode === "register" ? "new-password" : "current-password"
+                    }
+                    value={form.password}
+                    onChange={e =>
+                      setForm({ ...form, password: e.target.value })
+                    }
+                    placeholder={
+                      mode === "register"
+                        ? "At least 8 characters"
+                        : "Your password"
+                    }
+                  />
+                </label>
+
+                {mode === "login" && (
+                  <div style={{ textAlign: "right", marginTop: "-8px" }}>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => {
+                        setResetEmail(form.email);
+                        setAuthView("forgot");
+                      }}
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  className="primary-button auth-submit"
+                  type="submit"
+                >
+                  {mode === "register" ? "Create account" : "Sign in"}
+                  <span>↗</span>
+                </button>
+              </form>
+
+              <div className="auth-toggle">
+                {mode === "register"
+                  ? "Already have an account?"
+                  : "New to ExpenseFlow?"}{" "}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMode(mode === "register" ? "login" : "register")
+                  }
+                >
+                  {mode === "register" ? "Sign in" : "Create an account"}
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="auth-privacy">
+            Your financial data is scoped to your account.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
+

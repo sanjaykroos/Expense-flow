@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "node:crypto";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db.js";
@@ -10,7 +11,147 @@ export const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || "http://localhost:5173" }));
 app.use(express.json({ limit: "20kb" }));
 
+
 app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "expenseflow-api" }));
+
+
+app.post("/api/auth/forgot-password", async (req, res, next) => {
+  try {
+    const email =
+      typeof req.body?.email === "string"
+        ? req.body.email.trim().toLowerCase()
+        : "";
+
+    // Always return the same response to avoid revealing registered emails.
+    const response = {
+      message:
+        "If an account exists for that email, a reset link has been generated.",
+    };
+
+    if (!email || email.length > 254) {
+      return res.json(response);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      return res.json(response);
+    }
+
+    // Invalidate any previous reset links for this user.
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
+
+    // Generate a high-entropy token; store only its SHA-256 hash.
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+
+    await prisma.passwordResetToken.create({
+      data: {
+        tokenHash,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    // LOCAL DEVELOPMENT ONLY. Never log reset tokens in production.
+    const resetUrl =
+      `http://localhost:5173/reset-password?token=${token}`;
+
+    console.log("\n[LOCAL PASSWORD RESET] Reset link:");
+    console.log(resetUrl, "\n");
+
+    return res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res, next) => {
+  try {
+    const { token, password } = req.body ?? {};
+
+    if (
+      typeof token !== "string" ||
+      !/^[a-f0-9]{64}$/i.test(token) ||
+      typeof password !== "string" ||
+      password.length < 8 ||
+      Buffer.byteLength(password, "utf8") > 72
+    ) {
+      return res.status(400).json({
+        error: "Provide a valid reset token and a password of 8–72 bytes.",
+      });
+    }
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const resetRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!resetRecord || resetRecord.expiresAt <= new Date()) {
+      if (resetRecord) {
+        await prisma.passwordResetToken.deleteMany({
+          where: { id: resetRecord.id },
+        });
+      }
+
+      return res.status(400).json({
+        error: "This reset link is invalid or expired. Request a new one.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // A transaction makes the password update and token consumption atomic.
+    await prisma.$transaction(async (tx) => {
+      const consumed = await tx.passwordResetToken.deleteMany({
+        where: {
+          id: resetRecord.id,
+          tokenHash,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (consumed.count !== 1) {
+        throw new Error("RESET_TOKEN_ALREADY_USED");
+      }
+
+      await tx.user.update({
+        where: { id: resetRecord.userId },
+        data: { passwordHash },
+      });
+
+      // Invalidate all remaining reset links for this user.
+      await tx.passwordResetToken.deleteMany({
+        where: { userId: resetRecord.userId },
+      });
+    });
+
+    return res.json({
+      message: "Password reset successful. You can now sign in.",
+    });
+  } catch (error) {
+    if (error.message === "RESET_TOKEN_ALREADY_USED") {
+      return res.status(400).json({
+        error: "This reset link is invalid or expired. Request a new one.",
+      });
+    }
+
+    next(error);
+  }
+});
 
 app.post("/api/auth/register", async (req, res, next) => {
   try {
