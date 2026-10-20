@@ -3,6 +3,12 @@
 A full-stack personal expense tracker built with React, Vite, Express, Prisma, and SQLite.
 
 
+
+## Dashboard Preview
+
+![ExpenseFlow Dashboard](screenshots/dashboard.png)
+
+
 ## Features
 - Register and sign in with hashed passwords and JWT authentication
 - Create, list, update, and delete income/expense transactions
